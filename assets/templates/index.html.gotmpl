@@ -1,0 +1,63 @@
+<html>
+<head>
+    <!--Note that the template delimiters are brackets, not braces to avoid conflicting with Vue.js-->
+    <title>[[.Title]]</title>
+    <link rel="stylesheet" href="static/main.css">
+    <script src="static/vue.global.js"></script>
+    <script src="static/ws.js"></script>
+</head>
+<body>
+    <h1>Hello, World!</h1>
+    <div class="placeholder">This is a simple example of a Go template.</div>
+    <a href="static/main.css">View the CSS file</a>
+    <div>
+    <input type="text" id="message" placeholder="Enter a message"> <button onclick="sendMessage(document.getElementById('message').value)">Send</button> 
+    </div>
+    <!--Braces backtick Braces are needed because We are in a go template. -->
+    <div id="wslog">
+        Log Items
+        <div v-for="item in logItems" :key="item.id">
+            {{item.txt}}<br>
+        </div>
+    </div>
+
+
+
+    <script>
+        var wslog = document.getElementById('wslog');
+        count = 1;
+
+        var app = Vue.createApp({
+            data() {
+                return {
+                    logItems: [{
+                        id: 0,
+                        txt: 'Initial log item'
+                    }]
+                }
+            }
+        });
+        var appInstance = app.mount('#wslog');
+
+
+
+        onmessage = function(data) {
+            appInstance.logItems.push({
+                id: count++,
+                txt: data
+            });
+        };
+        var ws = openWebSocket(onmessage);
+
+        function sendMessage(message) {
+            payload = {
+                message: message
+            };
+            ws.send(JSON.stringify(payload));
+        }
+
+
+    </script>
+</body>
+
+</html>

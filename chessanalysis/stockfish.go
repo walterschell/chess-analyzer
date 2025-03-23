@@ -123,39 +123,11 @@ func (e *StockfishEngine) analyzeLastMove(moves []string, depth int) (*AnalysisR
 		e.sendCommand("position startpos")
 	}
 
-	// First analysis: Evaluate the specific last move using searchmoves
-	e.sendCommand(fmt.Sprintf("go depth %d searchmoves %s", depth, lastMove))
-
-	result := &AnalysisResult{}
-	for response := range e.responses {
-		if strings.Contains(response, "score cp ") {
-			// Parse score
-			parts := strings.Split(response, "score cp ")
-			if len(parts) > 1 {
-				fmt.Sscanf(parts[1], "%f", &result.Score)
-				result.Score = result.Score / 100 // Convert centipawns to pawns
-			}
-		}
-		if strings.Contains(response, " wdl ") {
-			// Parse WDL statistics (win/draw/loss in permille)
-			parts := strings.Split(response, " wdl ")
-			if len(parts) > 1 {
-				var win, draw, loss int
-				fmt.Sscanf(parts[1], "%d %d %d", &win, &draw, &loss)
-				result.WinProb = float64(win) / 1000.0
-				result.DrawProb = float64(draw) / 1000.0
-				result.LossProb = float64(loss) / 1000.0
-			}
-		}
-		if strings.HasPrefix(response, "bestmove") {
-			break
-		}
-	}
-
-	// Second analysis: Find what the best move would have been from the position before the last move
-	// Position is already set to before the last move, so we can just search
+	// First analysis: Find what the best move would have been from the position before the last move
 	e.sendCommand(fmt.Sprintf("go depth %d", depth))
 	lastScore := 0.0
+	bestMove := ""
+	var bestWinProb, bestDrawProb, bestLossProb float64
 
 	for response := range e.responses {
 		if strings.Contains(response, "score cp ") {
@@ -164,14 +136,73 @@ func (e *StockfishEngine) analyzeLastMove(moves []string, depth int) (*AnalysisR
 				fmt.Sscanf(parts[1], "%f", &lastScore)
 			}
 		}
+		if strings.Contains(response, " wdl ") {
+			// Parse WDL statistics (win/draw/loss in permille)
+			parts := strings.Split(response, " wdl ")
+			if len(parts) > 1 {
+				var win, draw, loss int
+				fmt.Sscanf(parts[1], "%d %d %d", &win, &draw, &loss)
+				bestWinProb = float64(win) / 1000.0
+				bestDrawProb = float64(draw) / 1000.0
+				bestLossProb = float64(loss) / 1000.0
+			}
+		}
 		if strings.HasPrefix(response, "bestmove") {
 			parts := strings.Fields(response)
 			if len(parts) >= 2 {
-				result.BestMove = parts[1]
-				result.BestMoveScore = lastScore / 100 // Convert centipawns to pawns
+				bestMove = parts[1]
 			}
 			break
 		}
+	}
+
+	result := &AnalysisResult{
+		BestMove:      bestMove,
+		BestMoveScore: lastScore / 100, // Convert centipawns to pawns
+	}
+
+	// If the chosen move is different from the best move, evaluate it
+	if bestMove != lastMove {
+		// Set up position before the last move again
+		if len(moves) > 1 {
+			e.sendCommand(fmt.Sprintf("position startpos moves %s", strings.Join(moves[:len(moves)-1], " ")))
+		} else {
+			e.sendCommand("position startpos")
+		}
+
+		// Evaluate the specific last move using searchmoves
+		e.sendCommand(fmt.Sprintf("go depth %d searchmoves %s", depth, lastMove))
+
+		for response := range e.responses {
+			if strings.Contains(response, "score cp ") {
+				// Parse score
+				parts := strings.Split(response, "score cp ")
+				if len(parts) > 1 {
+					fmt.Sscanf(parts[1], "%f", &result.Score)
+					result.Score = result.Score / 100 // Convert centipawns to pawns
+				}
+			}
+			if strings.Contains(response, " wdl ") {
+				// Parse WDL statistics (win/draw/loss in permille)
+				parts := strings.Split(response, " wdl ")
+				if len(parts) > 1 {
+					var win, draw, loss int
+					fmt.Sscanf(parts[1], "%d %d %d", &win, &draw, &loss)
+					result.WinProb = float64(win) / 1000.0
+					result.DrawProb = float64(draw) / 1000.0
+					result.LossProb = float64(loss) / 1000.0
+				}
+			}
+			if strings.HasPrefix(response, "bestmove") {
+				break
+			}
+		}
+	} else {
+		// If the chosen move is the best move, use the same score and WDL statistics
+		result.Score = result.BestMoveScore
+		result.WinProb = bestWinProb
+		result.DrawProb = bestDrawProb
+		result.LossProb = bestLossProb
 	}
 
 	return result, nil

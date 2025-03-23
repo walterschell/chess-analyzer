@@ -3,7 +3,6 @@ package chessanalysis
 import (
 	"encoding/json"
 	"fmt"
-	"math"
 	"strings"
 
 	chess "github.com/corentings/chess/v2"
@@ -25,23 +24,29 @@ func (c MoveClassification) String() string {
 }
 
 type MoveAnalysis struct {
-	MoveNumber                   int
-	Color                        string
-	MoveText                     string
-	Score                        float64
-	CentipawnDifference          float64
-	WinningProbability           float64
-	WinningProbabilityDifference float64
-	Classification               MoveClassification
-	IsBestMove                   bool
-	BestMove                     string
-	BestMoveSAN                  string
-	BestMoveScore                float64
+	MoveNumber            int
+	Color                 string
+	MoveText              string
+	WhiteScore            float64
+	PreviousWhiteScore    float64
+	IsBestMove            bool
+	BestMove              string
+	BestMoveSAN           string
+	BestMoveWhiteScore    float64
+	WhiteWinProb          float64
+	WhiteDrawProb         float64
+	WhiteLossProb         float64
+	PreviousWhiteWinProb  float64
+	PreviousWhiteDrawProb float64
+	PreviousWhiteLossProb float64
+	BestMoveWhiteWinProb  float64
+	BestMoveWhiteDrawProb float64
+	BestMoveWhiteLossProb float64
 }
 
 func (m *MoveAnalysis) String() string {
-	return fmt.Sprintf("Move %d: %s (Score: %.2f, Centipawn Difference: %.2f, Classification: %s, Is Best Move: %t)",
-		m.MoveNumber, m.MoveText, m.Score, m.CentipawnDifference, m.Classification, m.IsBestMove)
+	return fmt.Sprintf("Move %d: %s (Score: %.2f, Classification: %s, Is Best Move: %t)",
+		m.MoveNumber, m.MoveText, m.WhiteScore, m.ClassifyMove().String(), m.IsBestMove)
 }
 
 // Chess annotation symbols for move classifications
@@ -56,59 +61,84 @@ var classificationAnnotations = map[MoveClassification]string{
 
 // MoveAnalysisJSON is the JSON representation of MoveAnalysis
 type moveAnalysisJSON struct {
-	MoveNumber                   int     `json:"moveNumber"`
-	Color                        string  `json:"color"`
-	MoveText                     string  `json:"moveText"`
-	Score                        float64 `json:"score"`
-	CentipawnDifference          float64 `json:"centipawnDifference"`
-	WinningProbability           float64 `json:"winningProbability"`
-	WinningProbabilityDifference float64 `json:"winningProbabilityDifference"`
-	Classification               string  `json:"classification"`       // Human readable
-	ClassificationSymbol         string  `json:"classificationSymbol"` // Chess annotation
-	IsBestMove                   bool    `json:"isBestMove"`
-	BestMove                     string  `json:"bestMove"`
-	BestMoveSAN                  string  `json:"bestMoveSAN"`
-	BestMoveScore                float64 `json:"bestMoveScore"`
+	MoveNumber            int     `json:"moveNumber"`
+	Color                 string  `json:"color"`
+	MoveText              string  `json:"moveText"`
+	WhiteScore            float64 `json:"whiteScore"`
+	PreviousWhiteScore    float64 `json:"previousWhiteScore"`
+	Classification        string  `json:"classification"`       // Human readable
+	ClassificationSymbol  string  `json:"classificationSymbol"` // Chess annotation
+	IsBestMove            bool    `json:"isBestMove"`
+	BestMove              string  `json:"bestMove"`
+	BestMoveSAN           string  `json:"bestMoveSAN"`
+	BestMoveWhiteScore    float64 `json:"bestMoveWhiteScore"`
+	WhiteWinProb          float64 `json:"whiteWinProb"`
+	WhiteDrawProb         float64 `json:"whiteDrawProb"`
+	WhiteLossProb         float64 `json:"whiteLossProb"`
+	BestMoveWhiteWinProb  float64 `json:"bestMoveWhiteWinProb"`
+	BestMoveWhiteDrawProb float64 `json:"bestMoveWhiteDrawProb"`
+	BestMoveWhiteLossProb float64 `json:"bestMoveWhiteLossProb"`
+	PreviousWhiteWinProb  float64 `json:"previousWhiteWinProb"`
+	PreviousWhiteDrawProb float64 `json:"previousWhiteDrawProb"`
+	PreviousWhiteLossProb float64 `json:"previousWhiteLossProb"`
 }
 
 // MarshalJSON implements custom JSON serialization for MoveAnalysis
 func (m *MoveAnalysis) MarshalJSON() ([]byte, error) {
 	return json.Marshal(moveAnalysisJSON{
-		MoveNumber:                   m.MoveNumber,
-		Color:                        m.Color,
-		MoveText:                     m.MoveText,
-		Score:                        m.Score,
-		CentipawnDifference:          m.CentipawnDifference,
-		WinningProbability:           m.WinningProbability,
-		WinningProbabilityDifference: m.WinningProbabilityDifference,
-		Classification:               m.Classification.String(),
-		ClassificationSymbol:         classificationAnnotations[m.Classification],
-		IsBestMove:                   m.IsBestMove,
-		BestMove:                     m.BestMove,
-		BestMoveSAN:                  m.BestMoveSAN,
-		BestMoveScore:                m.BestMoveScore,
+		MoveNumber:            m.MoveNumber,
+		Color:                 m.Color,
+		MoveText:              m.MoveText,
+		WhiteScore:            m.WhiteScore,
+		PreviousWhiteScore:    m.PreviousWhiteScore,
+		Classification:        m.ClassifyMove().String(),
+		ClassificationSymbol:  classificationAnnotations[m.ClassifyMove()],
+		IsBestMove:            m.IsBestMove,
+		BestMove:              m.BestMove,
+		BestMoveSAN:           m.BestMoveSAN,
+		BestMoveWhiteScore:    m.BestMoveWhiteScore,
+		WhiteWinProb:          m.WhiteWinProb,
+		WhiteDrawProb:         m.WhiteDrawProb,
+		WhiteLossProb:         m.WhiteLossProb,
+		BestMoveWhiteWinProb:  m.BestMoveWhiteWinProb,
+		BestMoveWhiteDrawProb: m.BestMoveWhiteDrawProb,
+		BestMoveWhiteLossProb: m.BestMoveWhiteLossProb,
 	})
 }
 
 // classifyMove determines the quality of a move based on WDL probabilities
-func classifyMove(winProb, bestWinProb float64) MoveClassification {
-	// Calculate the difference in winning probability
-	winProbDiff := winProb - bestWinProb
+func (m *MoveAnalysis) ClassifyMove() MoveClassification {
 
+	if m.WhiteWinProb >= 0.95 && m.PreviousWhiteWinProb < 0.95 && m.Color == "White" {
+		return Winning
+	}
+
+	if m.WhiteLossProb >= 0.95 && m.PreviousWhiteLossProb < 0.95 && m.Color == "Black" {
+		return Winning
+	}
+
+	// Calculate the difference in winning probability
+	winProbDiff := m.WhiteWinProb - m.PreviousWhiteWinProb
+	if m.Color == "Black" {
+		winProbDiff = -winProbDiff
+	}
+
+	var classification MoveClassification
 	switch {
 	case winProbDiff <= -0.2: // More than 20% worse than best move
-		return Blunder
+		classification = Blunder
 	case winProbDiff <= -0.1: // More than 10% worse than best move
-		return Questionable
+		classification = Questionable
 	case winProbDiff >= 0.1: // More than 10% better than best move
-		return Excellent
+		classification = Excellent
 	case winProbDiff >= 0.05: // More than 5% better than best move
-		return Good
-	case winProb >= 0.95: // Almost certain win
-		return Winning
+		classification = Good
 	default:
-		return Neutral
+		classification = Neutral
 	}
+	log.Info("Classifying move", "move", m.MoveText, "winProbDiff", winProbDiff, "whiteWinProb", m.WhiteWinProb, "previousWhiteWinProb", m.PreviousWhiteWinProb, "classification", classification)
+
+	return classification
 }
 
 func moveToSan(startingPosition *chess.Position, move *chess.Move) string {
@@ -117,12 +147,6 @@ func moveToSan(startingPosition *chess.Position, move *chess.Move) string {
 
 func moveToUci(startingPosition *chess.Position, move *chess.Move) string {
 	return chess.UCINotation{}.Encode(startingPosition, move)
-}
-
-// calculateWinningProbability converts centipawn score to winning probability
-// using a logistic function
-func calculateWinningProbability(score float64) float64 {
-	return 1.0 / (1.0 + math.Exp(-score/100.0))
 }
 
 type AnalyzeChessGameOptions struct {
@@ -190,7 +214,10 @@ func AnalyzeChessGameStreaming(pgn string, opts ...AnalyzeChessGameOption) (<-ch
 		log.Info("Game created", "moves", len(game.Moves()))
 
 		moves := game.Moves()
-		var previousScore float64 = StartingPositionScore
+		var previousWhiteScore float64 = StartingPositionWhiteScore
+		var previousWhiteWinProb float64 = StartingPositionWhiteWinProb
+		var previousWhiteDrawProb float64 = StartingPositionWhiteDrawProb
+		var previousWhiteLossProb float64 = StartingPositionWhiteLossProb
 		var uciMoves []string
 		runningGame := chess.NewGame()
 		// Analyze each position
@@ -212,8 +239,6 @@ func AnalyzeChessGameStreaming(pgn string, opts ...AnalyzeChessGameOption) (<-ch
 			color := "White"
 			if i%2 == 1 {
 				color = "Black"
-				// Negate previous score for Black's perspective
-				previousScore = -previousScore
 			}
 
 			// Get the current move
@@ -222,9 +247,13 @@ func AnalyzeChessGameStreaming(pgn string, opts ...AnalyzeChessGameOption) (<-ch
 
 			// Create analysis entry
 			analysis := &MoveAnalysis{
-				MoveNumber: moveNum,
-				Color:      color,
-				MoveText:   moveText,
+				MoveNumber:            moveNum,
+				Color:                 color,
+				MoveText:              moveText,
+				PreviousWhiteScore:    previousWhiteScore,
+				PreviousWhiteWinProb:  previousWhiteWinProb,
+				PreviousWhiteDrawProb: previousWhiteDrawProb,
+				PreviousWhiteLossProb: previousWhiteLossProb,
 			}
 
 			// Analyze position after the move
@@ -246,33 +275,28 @@ func AnalyzeChessGameStreaming(pgn string, opts ...AnalyzeChessGameOption) (<-ch
 			}
 
 			// Store the score and probabilities
-			analysis.Score = result.Score
-			analysis.BestMoveScore = result.BestMoveScore
-			analysis.WinningProbability = result.WinProb
-			analysis.WinningProbabilityDifference = result.WinProb - result.BestMoveWinProb
-
-			if color == "Black" {
-				analysis.Score = -result.Score
-				analysis.BestMoveScore = -result.BestMoveScore
-				analysis.WinningProbability = result.LossProb // For Black, winning probability is the opponent's loss probability
-				analysis.WinningProbabilityDifference = result.LossProb - result.BestMoveLossProb
-			}
+			analysis.WhiteScore = result.WhiteScore
+			analysis.WhiteWinProb = result.WhiteWinProb
+			analysis.WhiteDrawProb = result.WhiteDrawProb
+			analysis.WhiteLossProb = result.WhiteLossProb
+			analysis.BestMoveWhiteWinProb = result.BestMoveWhiteWinProb
+			analysis.BestMoveWhiteDrawProb = result.BestMoveWhiteDrawProb
+			analysis.BestMoveWhiteLossProb = result.BestMoveWhiteLossProb
 
 			// Calculate centipawn difference for backward compatibility
-			analysis.CentipawnDifference = (result.BestMoveScore - result.Score) * 100
 
 			// Classify the move based on WDL probabilities
-			analysis.Classification = classifyMove(analysis.WinningProbability, result.BestMoveWinProb)
 			analysis.IsBestMove = result.BestMove == moveToUci(tempGame.Position(), lastMove)
 
 			// Send analysis result
 			results <- analysis
 
 			// Update for next iteration
-			previousScore = analysis.Score
-			if color == "Black" {
-				previousScore = -previousScore
-			}
+			previousWhiteScore = analysis.WhiteScore
+			previousWhiteWinProb = analysis.WhiteWinProb
+			previousWhiteDrawProb = analysis.WhiteDrawProb
+			previousWhiteLossProb = analysis.WhiteLossProb
+
 		}
 	}()
 

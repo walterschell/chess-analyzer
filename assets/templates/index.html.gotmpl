@@ -143,6 +143,36 @@
         .move-item .best-move {
             margin-bottom: 0;
         }
+
+        .wdl-probabilities {
+            display: flex;
+            gap: 10px;
+            font-size: 0.85em;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .wdl-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .wdl-label {
+            font-weight: bold;
+            color: #888;
+        }
+
+        .wdl-value {
+            color: #444;
+        }
+
+        .wdl-container {
+            background-color: #f8f8f8;
+            padding: 4px 8px;
+            border-radius: 4px;
+            margin-top: 2px;
+        }
     </style>
 </head>
 <body>
@@ -436,15 +466,63 @@
         function updateMoveDisplay() {
             const moveObj = moveAnalysis.get(currentMoveIndex);
             if (moveObj) {
-                const moveText = `Move ${moveObj.moveNumber}. ${moveObj.color} (${moveObj.moveText}): Score: ${moveObj.score.toFixed(2)}`;
-                const bestMoveText = moveObj.bestMoveSAN ? `Best: ${moveObj.bestMoveSAN} (Score: ${moveObj.bestMoveScore.toFixed(2)})` : '';
+                // Calculate score difference for display
+                const scoreDiff = moveObj.whiteScore - moveObj.previousWhiteScore;
+                const scoreText = `${moveObj.whiteScore.toFixed(2)} (${scoreDiff >= 0 ? '+' : ''}${scoreDiff.toFixed(2)})`;
                 
-                // Update the move display with both lines
+                const moveText = `Move ${moveObj.moveNumber}. ${moveObj.color} (${moveObj.moveText}): Score: ${scoreText}`;
+                const bestMoveText = moveObj.bestMoveSAN ? `Best: ${moveObj.bestMoveSAN} (Score: ${moveObj.bestMoveWhiteScore.toFixed(2)})` : '';
+                
+                // Create WDL probability displays
+                const playedWDL = `
+                    <div class="wdl-container">
+                        <div class="wdl-probabilities">
+                            <div class="wdl-item">
+                                <span class="wdl-label">Win</span>
+                                <span class="wdl-value">${(moveObj.whiteWinProb * 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="wdl-item">
+                                <span class="wdl-label">Draw</span>
+                                <span class="wdl-value">${(moveObj.whiteDrawProb * 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="wdl-item">
+                                <span class="wdl-label">Loss</span>
+                                <span class="wdl-value">${(moveObj.whiteLossProb * 100).toFixed(1)}%</span>
+                            </div>
+                        </div>
+                    </div>`;
+
+                const bestWDL = moveObj.bestMoveSAN ? `
+                    <div class="wdl-container">
+                        <div class="wdl-probabilities">
+                            <div class="wdl-item">
+                                <span class="wdl-label">Win</span>
+                                <span class="wdl-value">${(moveObj.bestMoveWhiteWinProb * 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="wdl-item">
+                                <span class="wdl-label">Draw</span>
+                                <span class="wdl-value">${(moveObj.bestMoveWhiteDrawProb * 100).toFixed(1)}%</span>
+                            </div>
+                            <div class="wdl-item">
+                                <span class="wdl-label">Loss</span>
+                                <span class="wdl-value">${(moveObj.bestMoveWhiteLossProb * 100).toFixed(1)}%</span>
+                            </div>
+                        </div>
+                    </div>` : '';
+                
+                // Update the move display with both lines and WDL probabilities
                 const moveDisplay = document.getElementById('move-display');
                 if (moveDisplay) {
                     moveDisplay.innerHTML = `
-                        <div class="current-move">${moveText}</div>
-                        ${bestMoveText ? `<div class="best-move">${bestMoveText}</div>` : ''}
+                        <div class="current-move">
+                            ${moveText}
+                            ${playedWDL}
+                        </div>
+                        ${bestMoveText ? `
+                            <div class="best-move">
+                                ${bestMoveText}
+                                ${bestWDL}
+                            </div>` : ''}
                     `;
                 }
                 
@@ -489,8 +567,13 @@
             try {
                 const analysis = JSON.parse(data.text);
                 console.log('Analysis:', analysis);
-                const moveText = `Move ${analysis.moveNumber}. ${analysis.color} (${analysis.moveText}): Score: ${analysis.score.toFixed(2)}`;
-                const bestMoveText = analysis.bestMoveSAN ? `Best: ${analysis.bestMoveSAN} (Score: ${analysis.bestMoveScore.toFixed(2)})` : '';
+                
+                // Calculate the score difference for display
+                const scoreDiff = analysis.whiteScore - analysis.previousWhiteScore;
+                const scoreText = `${analysis.whiteScore.toFixed(2)} (${scoreDiff >= 0 ? '+' : ''}${scoreDiff.toFixed(2)})`;
+                
+                const moveText = `Move ${analysis.moveNumber}. ${analysis.color} (${analysis.moveText}): Score: ${scoreText}`;
+                const bestMoveText = analysis.bestMoveSAN ? `Best: ${analysis.bestMoveSAN} (Score: ${analysis.bestMoveWhiteScore.toFixed(2)})` : '';
                 
                 // Store analysis for the move
                 const moveIndex = (analysis.moveNumber - 1) * 2 + (analysis.color === 'Black' ? 1 : 0);
@@ -505,10 +588,10 @@
                 // Update chart data
                 const label = `${analysis.moveNumber}${analysis.color === 'White' ? '.' : '...'}`;
                 evaluationData.labels.push(label);
-                evaluationData.datasets[0].data.push(analysis.score);
+                evaluationData.datasets[0].data.push(analysis.whiteScore);
                 
                 // Update y-axis scale if needed
-                const maxAbsValue = Math.max(4, Math.abs(analysis.score));
+                const maxAbsValue = Math.max(4, Math.abs(analysis.whiteScore));
                 evaluationChart.options.scales.y.min = -maxAbsValue;
                 evaluationChart.options.scales.y.max = maxAbsValue;
                 

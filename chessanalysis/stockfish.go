@@ -12,7 +12,10 @@ import (
 
 var log = slog.Default().With("package", "chessanalysis")
 
-const StartingPositionScore = 0.11
+const StartingPositionWhiteScore = 0.11
+const StartingPositionWhiteWinProb = 0.01
+const StartingPositionWhiteDrawProb = 0.98
+const StartingPositionWhiteLossProb = 0.01
 
 type StockfishEngine struct {
 	cmd       *exec.Cmd
@@ -24,15 +27,15 @@ type StockfishEngine struct {
 }
 
 type AnalysisResult struct {
-	Score            float64
-	WinProb          float64
-	DrawProb         float64
-	LossProb         float64
-	BestMove         string
-	BestMoveScore    float64
-	BestMoveWinProb  float64
-	BestMoveDrawProb float64
-	BestMoveLossProb float64
+	WhiteScore            float64
+	WhiteWinProb          float64
+	WhiteDrawProb         float64
+	WhiteLossProb         float64
+	BestMove              string
+	BestMoveWhiteScore    float64
+	BestMoveWhiteWinProb  float64
+	BestMoveWhiteDrawProb float64
+	BestMoveWhiteLossProb float64
 }
 
 // NewStockfishEngine creates and initializes a new Stockfish engine instance
@@ -90,7 +93,7 @@ func (e *StockfishEngine) initialize() error {
 
 // sendCommand sends a command to the Stockfish engine
 func (e *StockfishEngine) sendCommand(cmd string) error {
-	log.Info("sending command", "command", cmd)
+	log.Debug("sending command", "command", cmd)
 	e.mutex.Lock()
 	defer e.mutex.Unlock()
 	_, err := fmt.Fprintln(e.stdin, cmd)
@@ -101,7 +104,7 @@ func (e *StockfishEngine) sendCommand(cmd string) error {
 func (e *StockfishEngine) readOutput() {
 	for e.stdout.Scan() {
 		response := e.stdout.Text()
-		log.Info("received response", "response", response)
+		log.Debug("received response", "response", response)
 		e.responses <- response
 	}
 	close(e.responses)
@@ -160,11 +163,11 @@ func (e *StockfishEngine) analyzeLastMove(moves []string, depth int) (*AnalysisR
 	}
 
 	result := &AnalysisResult{
-		BestMove:         bestMove,
-		BestMoveScore:    lastScore / 100, // Convert centipawns to pawns
-		BestMoveWinProb:  bestWinProb,
-		BestMoveDrawProb: bestDrawProb,
-		BestMoveLossProb: bestLossProb,
+		BestMove:              bestMove,
+		BestMoveWhiteScore:    lastScore / 100, // Convert centipawns to pawns
+		BestMoveWhiteWinProb:  bestWinProb,
+		BestMoveWhiteDrawProb: bestDrawProb,
+		BestMoveWhiteLossProb: bestLossProb,
 	}
 
 	// If the chosen move is different from the best move, evaluate it
@@ -184,8 +187,8 @@ func (e *StockfishEngine) analyzeLastMove(moves []string, depth int) (*AnalysisR
 				// Parse score
 				parts := strings.Split(response, "score cp ")
 				if len(parts) > 1 {
-					fmt.Sscanf(parts[1], "%f", &result.Score)
-					result.Score = result.Score / 100 // Convert centipawns to pawns
+					fmt.Sscanf(parts[1], "%f", &result.WhiteScore)
+					result.WhiteScore = result.WhiteScore / 100 // Convert centipawns to pawns
 				}
 			}
 			if strings.Contains(response, " wdl ") {
@@ -194,9 +197,9 @@ func (e *StockfishEngine) analyzeLastMove(moves []string, depth int) (*AnalysisR
 				if len(parts) > 1 {
 					var win, draw, loss int
 					fmt.Sscanf(parts[1], "%d %d %d", &win, &draw, &loss)
-					result.WinProb = float64(win) / 1000.0
-					result.DrawProb = float64(draw) / 1000.0
-					result.LossProb = float64(loss) / 1000.0
+					result.WhiteWinProb = float64(win) / 1000.0
+					result.WhiteDrawProb = float64(draw) / 1000.0
+					result.WhiteLossProb = float64(loss) / 1000.0
 				}
 			}
 			if strings.HasPrefix(response, "bestmove") {
@@ -205,10 +208,18 @@ func (e *StockfishEngine) analyzeLastMove(moves []string, depth int) (*AnalysisR
 		}
 	} else {
 		// If the chosen move is the best move, use the same score and WDL statistics
-		result.Score = result.BestMoveScore
-		result.WinProb = bestWinProb
-		result.DrawProb = bestDrawProb
-		result.LossProb = bestLossProb
+		result.WhiteScore = result.BestMoveWhiteScore
+		result.WhiteWinProb = bestWinProb
+		result.WhiteDrawProb = bestDrawProb
+		result.WhiteLossProb = bestLossProb
+	}
+
+	// If move was black, negate the score and flip the win/loss probabilities
+	if len(moves)%2 == 0 {
+		result.WhiteScore = -result.WhiteScore
+		whiteLossProb := result.WhiteWinProb
+		result.WhiteWinProb = result.WhiteLossProb
+		result.WhiteLossProb = whiteLossProb
 	}
 
 	return result, nil

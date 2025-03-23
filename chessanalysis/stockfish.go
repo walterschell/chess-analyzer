@@ -24,12 +24,15 @@ type StockfishEngine struct {
 }
 
 type AnalysisResult struct {
-	Score         float64
-	WinProb       float64
-	DrawProb      float64
-	LossProb      float64
-	BestMove      string
-	BestMoveScore float64
+	Score            float64
+	WinProb          float64
+	DrawProb         float64
+	LossProb         float64
+	BestMove         string
+	BestMoveScore    float64
+	BestMoveWinProb  float64
+	BestMoveDrawProb float64
+	BestMoveLossProb float64
 }
 
 // NewStockfishEngine creates and initializes a new Stockfish engine instance
@@ -157,8 +160,11 @@ func (e *StockfishEngine) analyzeLastMove(moves []string, depth int) (*AnalysisR
 	}
 
 	result := &AnalysisResult{
-		BestMove:      bestMove,
-		BestMoveScore: lastScore / 100, // Convert centipawns to pawns
+		BestMove:         bestMove,
+		BestMoveScore:    lastScore / 100, // Convert centipawns to pawns
+		BestMoveWinProb:  bestWinProb,
+		BestMoveDrawProb: bestDrawProb,
+		BestMoveLossProb: bestLossProb,
 	}
 
 	// If the chosen move is different from the best move, evaluate it

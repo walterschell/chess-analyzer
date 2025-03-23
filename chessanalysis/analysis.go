@@ -90,23 +90,27 @@ func (m *MoveAnalysis) MarshalJSON() ([]byte, error) {
 	})
 }
 
-// classifyMove determines the quality of a move based on centipawn loss
-func classifyMove(centipawnDiff float64) MoveClassification {
+// classifyMove determines the quality of a move based on WDL probabilities
+func classifyMove(winProb, bestWinProb float64) MoveClassification {
+	// Calculate the difference in winning probability
+	winProbDiff := winProb - bestWinProb
+
 	switch {
-	case centipawnDiff <= -200:
+	case winProbDiff <= -0.2: // More than 20% worse than best move
 		return Blunder
-	case centipawnDiff <= -100:
+	case winProbDiff <= -0.1: // More than 10% worse than best move
 		return Questionable
-	case centipawnDiff >= 100:
+	case winProbDiff >= 0.1: // More than 10% better than best move
 		return Excellent
-	case centipawnDiff >= 50:
+	case winProbDiff >= 0.05: // More than 5% better than best move
 		return Good
-	case math.Abs(centipawnDiff) < 20:
+	case winProb >= 0.95: // Almost certain win
 		return Winning
 	default:
 		return Neutral
 	}
 }
+
 func moveToSan(startingPosition *chess.Position, move *chess.Move) string {
 	return chess.AlgebraicNotation{}.Encode(startingPosition, move)
 }
@@ -241,32 +245,27 @@ func AnalyzeChessGameStreaming(pgn string, opts ...AnalyzeChessGameOption) (<-ch
 				analysis.BestMoveSAN = chess.AlgebraicNotation{}.Encode(tempGame.Position(), bestMove)
 			}
 
-			// Store the score
+			// Store the score and probabilities
 			analysis.Score = result.Score
 			analysis.BestMoveScore = result.BestMoveScore
+			analysis.WinningProbability = result.WinProb
+			analysis.WinningProbabilityDifference = result.WinProb - result.BestMoveWinProb
 
 			if color == "Black" {
 				analysis.Score = -result.Score
 				analysis.BestMoveScore = -result.BestMoveScore
-
-			}
-			// Calculate score difference
-			scoreDiff := analysis.Score - previousScore
-			if color == "Black" {
-				scoreDiff = -scoreDiff
+				analysis.WinningProbability = result.LossProb // For Black, winning probability is the opponent's loss probability
+				analysis.WinningProbabilityDifference = result.LossProb - result.BestMoveLossProb
 			}
 
-			// Update analysis
-			analysis.CentipawnDifference = scoreDiff * 100 // Convert to centipawns
-			analysis.Classification = classifyMove(analysis.CentipawnDifference)
-			analysis.WinningProbability = result.WinProb
-			if color == "Black" {
-				analysis.WinningProbability = result.LossProb
-			}
-			analysis.WinningProbabilityDifference = analysis.WinningProbability - calculateWinningProbability(previousScore)
+			// Calculate centipawn difference for backward compatibility
+			analysis.CentipawnDifference = (result.BestMoveScore - result.Score) * 100
 
-			analysis.IsBestMove = false
-			// Send analysis through channel
+			// Classify the move based on WDL probabilities
+			analysis.Classification = classifyMove(analysis.WinningProbability, result.BestMoveWinProb)
+			analysis.IsBestMove = result.BestMove == moveToUci(tempGame.Position(), lastMove)
+
+			// Send analysis result
 			results <- analysis
 
 			// Update for next iteration

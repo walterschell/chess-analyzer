@@ -389,13 +389,15 @@
                             },
                             afterDataLimits: (scale) => {
                                 const absMax = Math.max(Math.abs(scale.max), Math.abs(scale.min));
-                                const range = Math.max(absMax, 4);
+                                const range = Math.max(absMax, 4); // Ensure at least ±4 pawns range
                                 scale.min = -range;
                                 scale.max = range;
                             }
                         },
                         x: {
-                            display: false  // Hide x-axis labels
+                            display: false,  // Hide x-axis labels
+                            min: 0,          // Start from 0
+                            max: 100         // Default max, will be updated when loading game
                         }
                     },
                     plugins: {
@@ -413,7 +415,8 @@
                                     xMin: 0,
                                     xMax: 0,
                                     borderColor: '#ff6b6b',
-                                    borderWidth: 2
+                                    borderWidth: 2,
+                                    drawTime: 'afterDatasetsDraw'
                                 }
                             }
                         }
@@ -445,20 +448,10 @@
                     `;
                 }
                 
-                // Update the evaluation chart
-                const chartData = evaluationChart.data;
-                chartData.labels = [];
-                chartData.datasets[0].data = [];
-                
-                for (let i = 0; i <= currentMoveIndex; i++) {
-                    const move = moveAnalysis.get(i);
-                    if (move) {
-                        chartData.labels.push(`${move.moveNumber}${move.color === 'White' ? '.' : '...'}`);
-                        chartData.datasets[0].data.push(move.score);
-                    }
-                }
-                
-                evaluationChart.update();
+                // Update the current move line position
+                evaluationChart.options.plugins.annotation.annotations.currentMove.xMin = currentMoveIndex + 1;
+                evaluationChart.options.plugins.annotation.annotations.currentMove.xMax = currentMoveIndex + 1;
+                evaluationChart.update('none');
                 
                 // Update the board position
                 const position = game.history({ verbose: true });
@@ -509,13 +502,17 @@
                     bestMove: bestMoveText
                 });
                 
-                // Update chart data without blocking
-                requestAnimationFrame(() => {
-                    const label = `${analysis.moveNumber}${analysis.color === 'White' ? '.' : '...'}`;
-                    evaluationData.labels.push(label);
-                    evaluationData.datasets[0].data.push(analysis.score);
-                    evaluationChart.update();
-                });
+                // Update chart data
+                const label = `${analysis.moveNumber}${analysis.color === 'White' ? '.' : '...'}`;
+                evaluationData.labels.push(label);
+                evaluationData.datasets[0].data.push(analysis.score);
+                
+                // Update y-axis scale if needed
+                const maxAbsValue = Math.max(4, Math.abs(analysis.score));
+                evaluationChart.options.scales.y.min = -maxAbsValue;
+                evaluationChart.options.scales.y.max = maxAbsValue;
+                
+                evaluationChart.update('none');
 
                 // Advance to this move if we're not already there
                 if (currentMoveIndex < moveIndex) {
@@ -626,13 +623,17 @@
                 board.position('start');
                 removeHighlights();
                 
-                // Reset the evaluation chart
+                // Reset the evaluation chart with fixed x-axis range
                 evaluationData.labels = ['Start'];
                 evaluationData.datasets[0].data = [0];
-                evaluationChart.update();
+                evaluationChart.options.scales.x.max = moves.length;
+                evaluationChart.options.plugins.annotation.annotations.currentMove.xMin = 0;
+                evaluationChart.options.plugins.annotation.annotations.currentMove.xMax = 0;
+                evaluationChart.update('none');
                 
                 // Clear previous analysis
                 analysisApp.analysisItems = [];
+                moveAnalysis.clear();
                 
                 // Start analysis asynchronously
                 setTimeout(() => {

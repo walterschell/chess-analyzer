@@ -1,3 +1,6 @@
+# Purpose
+   The primary purpose of this project is to test out Cursor's ability to aid in coding projects. It is almost entirely LLM generated code.
+
 # Chess Game Analyzer
 
 A web application that allows you to analyze chess games using Stockfish. Upload your games in PGN format, visualize them move by move, and get computer analysis of each position.

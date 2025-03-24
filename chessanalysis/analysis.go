@@ -17,10 +17,79 @@ const (
 	Good
 	Excellent
 	Winning
+	Best
 )
 
+type MoveClassifier interface {
+	ClassifyMove(move *MoveAnalysis) MoveClassification
+}
+
+type MoveClassifierFunc func(move *MoveAnalysis) MoveClassification
+
+func (c MoveClassifierFunc) ClassifyMove(move *MoveAnalysis) MoveClassification {
+	return c(move)
+}
+
+type ThresholdMoveClassifier struct {
+	blunderWinProbThreshold       float64 // Blunder if magnitude of negative win probability delta is greater than this threshold
+	blunderLossProbThreshold      float64 // Blunder if magnitude of positive loss probability delta is greater than this threshold
+	questionableWinProbThreshold  float64 // Questionable if magnitude of negative win probability delta is greater than this threshold
+	questionableLossProbThreshold float64 // Questionable if magnitude of positive loss probability delta is greater than this threshold
+	goodWinProbThreshold          float64 // Good if magnitude of positive win probability delta is greater than this threshold
+	goodLossProbThreshold         float64 // Good if magnitude of negative loss probability delta is greater than this threshold
+	excellentWinProbThreshold     float64 // Excellent if magnitude of positive win probability delta is greater than this threshold
+	excellentLossProbThreshold    float64
+}
+
+func (c *ThresholdMoveClassifier) ClassifyMove(move *MoveAnalysis) MoveClassification {
+	if move.IsBestMove {
+		return Best
+	}
+
+	var winProbDelta float64
+	var lossProbDelta float64
+	if move.Color == "White" {
+		winProbDelta = move.WhiteWinProb - move.PreviousWhiteWinProb
+		lossProbDelta = move.WhiteLossProb - move.PreviousWhiteLossProb
+	} else {
+		winProbDelta = move.WhiteLossProb - move.PreviousWhiteLossProb
+		lossProbDelta = move.WhiteWinProb - move.PreviousWhiteWinProb
+	}
+
+	if winProbDelta <= -c.blunderWinProbThreshold || lossProbDelta >= c.blunderLossProbThreshold {
+		return Blunder
+	}
+
+	if winProbDelta <= -c.questionableWinProbThreshold || lossProbDelta >= c.questionableLossProbThreshold {
+		return Questionable
+	}
+
+	if winProbDelta >= c.excellentWinProbThreshold || lossProbDelta <= -c.excellentLossProbThreshold {
+		return Excellent
+	}
+
+	if winProbDelta >= c.goodWinProbThreshold || lossProbDelta <= -c.goodLossProbThreshold {
+		return Good
+	}
+
+	return Neutral
+}
+
+func DefaultMoveClassifier() MoveClassifier {
+	return &ThresholdMoveClassifier{
+		blunderWinProbThreshold:       0.2,
+		blunderLossProbThreshold:      0.2,
+		questionableWinProbThreshold:  0.1,
+		questionableLossProbThreshold: 0.1,
+		goodWinProbThreshold:          0.05,
+		goodLossProbThreshold:         0.05,
+		excellentWinProbThreshold:     0.1,
+		excellentLossProbThreshold:    0.1,
+	}
+}
+
 func (c MoveClassification) String() string {
-	return []string{"Neutral", "Blunder", "Questionable", "Good", "Excellent", "Winning"}[c]
+	return []string{"Neutral", "Blunder", "Questionable", "Good", "Excellent", "Winning", "Best"}[c]
 }
 
 type MoveAnalysis struct {
@@ -42,11 +111,12 @@ type MoveAnalysis struct {
 	BestMoveWhiteWinProb  float64
 	BestMoveWhiteDrawProb float64
 	BestMoveWhiteLossProb float64
+	Classification        MoveClassification
 }
 
 func (m *MoveAnalysis) String() string {
 	return fmt.Sprintf("Move %d: %s (Score: %.2f, Classification: %s, Is Best Move: %t)",
-		m.MoveNumber, m.MoveText, m.WhiteScore, m.ClassifyMove().String(), m.IsBestMove)
+		m.MoveNumber, m.MoveText, m.WhiteScore, m.Classification, m.IsBestMove)
 }
 
 // Chess annotation symbols for move classifications
@@ -57,6 +127,7 @@ var classificationAnnotations = map[MoveClassification]string{
 	Good:         "!",
 	Excellent:    "!!",
 	Winning:      "⩲",
+	Best:         "*",
 }
 
 // MoveAnalysisJSON is the JSON representation of MoveAnalysis
@@ -91,8 +162,8 @@ func (m *MoveAnalysis) MarshalJSON() ([]byte, error) {
 		MoveText:              m.MoveText,
 		WhiteScore:            m.WhiteScore,
 		PreviousWhiteScore:    m.PreviousWhiteScore,
-		Classification:        m.ClassifyMove().String(),
-		ClassificationSymbol:  classificationAnnotations[m.ClassifyMove()],
+		Classification:        m.Classification.String(),
+		ClassificationSymbol:  classificationAnnotations[m.Classification],
 		IsBestMove:            m.IsBestMove,
 		BestMove:              m.BestMove,
 		BestMoveSAN:           m.BestMoveSAN,
@@ -103,42 +174,10 @@ func (m *MoveAnalysis) MarshalJSON() ([]byte, error) {
 		BestMoveWhiteWinProb:  m.BestMoveWhiteWinProb,
 		BestMoveWhiteDrawProb: m.BestMoveWhiteDrawProb,
 		BestMoveWhiteLossProb: m.BestMoveWhiteLossProb,
+		PreviousWhiteWinProb:  m.PreviousWhiteWinProb,
+		PreviousWhiteDrawProb: m.PreviousWhiteDrawProb,
+		PreviousWhiteLossProb: m.PreviousWhiteLossProb,
 	})
-}
-
-// classifyMove determines the quality of a move based on WDL probabilities
-func (m *MoveAnalysis) ClassifyMove() MoveClassification {
-
-	if m.WhiteWinProb >= 0.95 && m.PreviousWhiteWinProb < 0.95 && m.Color == "White" {
-		return Winning
-	}
-
-	if m.WhiteLossProb >= 0.95 && m.PreviousWhiteLossProb < 0.95 && m.Color == "Black" {
-		return Winning
-	}
-
-	// Calculate the difference in winning probability
-	winProbDiff := m.WhiteWinProb - m.PreviousWhiteWinProb
-	if m.Color == "Black" {
-		winProbDiff = -winProbDiff
-	}
-
-	var classification MoveClassification
-	switch {
-	case winProbDiff <= -0.2: // More than 20% worse than best move
-		classification = Blunder
-	case winProbDiff <= -0.1: // More than 10% worse than best move
-		classification = Questionable
-	case winProbDiff >= 0.1: // More than 10% better than best move
-		classification = Excellent
-	case winProbDiff >= 0.05: // More than 5% better than best move
-		classification = Good
-	default:
-		classification = Neutral
-	}
-	log.Info("Classifying move", "move", m.MoveText, "winProbDiff", winProbDiff, "whiteWinProb", m.WhiteWinProb, "previousWhiteWinProb", m.PreviousWhiteWinProb, "classification", classification)
-
-	return classification
 }
 
 func moveToSan(startingPosition *chess.Position, move *chess.Move) string {
@@ -150,11 +189,13 @@ func moveToUci(startingPosition *chess.Position, move *chess.Move) string {
 }
 
 type AnalyzeChessGameOptions struct {
-	Depth int
+	Depth          int
+	MoveClassifier MoveClassifier
 }
 
 var defaultAnalyzeChessGameOptions = AnalyzeChessGameOptions{
-	Depth: 2,
+	Depth:          2,
+	MoveClassifier: DefaultMoveClassifier(),
 }
 
 type AnalyzeChessGameOption func(*AnalyzeChessGameOptions)
@@ -162,6 +203,12 @@ type AnalyzeChessGameOption func(*AnalyzeChessGameOptions)
 func WithDepth(depth int) AnalyzeChessGameOption {
 	return func(opts *AnalyzeChessGameOptions) {
 		opts.Depth = depth
+	}
+}
+
+func WithMoveClassifier(moveClassifier MoveClassifier) AnalyzeChessGameOption {
+	return func(opts *AnalyzeChessGameOptions) {
+		opts.MoveClassifier = moveClassifier
 	}
 }
 
@@ -287,6 +334,8 @@ func AnalyzeChessGameStreaming(pgn string, opts ...AnalyzeChessGameOption) (<-ch
 
 			// Classify the move based on WDL probabilities
 			analysis.IsBestMove = result.BestMove == moveToUci(tempGame.Position(), lastMove)
+
+			analysis.Classification = analysisOpts.MoveClassifier.ClassifyMove(analysis)
 
 			// Send analysis result
 			results <- analysis

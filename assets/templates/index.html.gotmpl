@@ -239,9 +239,7 @@
                 <div id="move-display" class="move-display"></div>
                 
                 <div class="analysis" id="analysisOutput">
-                    <div v-for="item in analysisItems" :key="item.id">
-                        {{item.txt}}<br>
-                    </div>
+                    <div v-for="item in analysisItems" :key="item.id" v-html="item.txt"></div>
                 </div>
             </div>
         </div>
@@ -367,6 +365,7 @@
                 case 'Good':
                 case 'Excellent':
                 case 'Winning':
+                case 'Best':
                     return '#42b983';  // Green
                 default:
                     return '#3498db';  // Blue for neutral
@@ -468,57 +467,88 @@
             if (moveObj) {
                 // Calculate score difference for display
                 const scoreDiff = moveObj.whiteScore - moveObj.previousWhiteScore;
-                const scoreText = `${moveObj.whiteScore.toFixed(2)} (${scoreDiff >= 0 ? '+' : ''}${scoreDiff.toFixed(2)})`;
+                const isWhite = moveObj.color === 'White';
+                const scoreColor = (isWhite && moveObj.whiteScore >= 0) || (!isWhite && moveObj.whiteScore <= 0) ? '#42b983' : '#ff6b6b';
+                const scoreDiffColor = (isWhite && scoreDiff >= 0) || (!isWhite && scoreDiff <= 0) ? '#42b983' : '#ff6b6b';
+                const scoreText = `<span style="color: ${scoreColor}">${moveObj.whiteScore.toFixed(2)}</span> (<span style="color: ${scoreDiffColor}">${scoreDiff >= 0 ? '+' : ''}${scoreDiff.toFixed(2)}</span>)`;
                 
-                const moveText = `Move ${moveObj.moveNumber}. ${moveObj.color} (${moveObj.moveText}): Score: ${scoreText}`;
+                const moveText = `Move ${moveObj.moveNumber}. ${moveObj.color} (${moveObj.moveText} ${moveObj.classification}): Score: ${scoreText}`;
                 const bestMoveText = moveObj.bestMoveSAN ? `Best: ${moveObj.bestMoveSAN} (Score: ${moveObj.bestMoveWhiteScore.toFixed(2)})` : '';
                 
+                const whiteWinProbDiff = 100 * (moveObj.whiteWinProb - moveObj.previousWhiteWinProb);
+                const whiteDrawProbDiff = 100 * (moveObj.whiteDrawProb - moveObj.previousWhiteDrawProb);
+                const blackWinProbDiff = 100 * (moveObj.whiteLossProb - moveObj.previousWhiteLossProb);
+
+                const whiteWinProbDiffColor = (isWhite && whiteWinProbDiff >= 0) || (!isWhite && whiteWinProbDiff <= 0) ? '#42b983' : '#ff6b6b';
+                const whiteDrawProbDiffColor = '#000000';
+                const blackWinProbDiffColor = (isWhite && blackWinProbDiff <= 0) || (!isWhite && blackWinProbDiff >= 0) ? '#42b983' : '#ff6b6b';
+
+                const whiteWinProbText = `${(moveObj.whiteWinProb * 100).toFixed(1)}% (<span style="color: ${whiteWinProbDiffColor}">${whiteWinProbDiff >= 0 ? '+' : ''}${whiteWinProbDiff.toFixed(1)}%</span>)`;
+                const whiteDrawProbText = `${(moveObj.whiteDrawProb * 100).toFixed(1)}% (<span style="color: ${whiteDrawProbDiffColor}">${whiteDrawProbDiff >= 0 ? '+' : ''}${whiteDrawProbDiff.toFixed(1)}%</span>)`;
+                const blackWinProbText = `${(moveObj.whiteLossProb * 100).toFixed(1)}% (<span style="color: ${blackWinProbDiffColor}">${blackWinProbDiff >= 0 ? '+' : ''}${blackWinProbDiff.toFixed(1)}%</span>)`;
+
                 // Create WDL probability displays
                 const playedWDL = `
                     <div class="wdl-container">
                         <div class="wdl-probabilities">
                             <div class="wdl-item">
-                                <span class="wdl-label">Win</span>
-                                <span class="wdl-value">${(moveObj.whiteWinProb * 100).toFixed(1)}%</span>
+                                <span class="wdl-label">White to Win</span>
+                                <span class="wdl-value">${whiteWinProbText}</span>
                             </div>
                             <div class="wdl-item">
                                 <span class="wdl-label">Draw</span>
-                                <span class="wdl-value">${(moveObj.whiteDrawProb * 100).toFixed(1)}%</span>
+                                <span class="wdl-value">${whiteDrawProbText}</span>
                             </div>
                             <div class="wdl-item">
-                                <span class="wdl-label">Loss</span>
-                                <span class="wdl-value">${(moveObj.whiteLossProb * 100).toFixed(1)}%</span>
+                                <span class="wdl-label">Black to Win</span>
+                                <span class="wdl-value">${blackWinProbText}</span>
                             </div>
                         </div>
                     </div>`;
+
+                const bestMoveWhiteWinProbDiff = 100 * (moveObj.bestMoveWhiteWinProb - moveObj.previousWhiteWinProb);
+                const bestMoveWhiteDrawProbDiff = 100 * (moveObj.bestMoveWhiteDrawProb - moveObj.previousWhiteDrawProb);
+                const bestMoveWhiteLossProbDiff = 100 * (moveObj.bestMoveWhiteLossProb - moveObj.previousWhiteLossProb);
+
+                const bestMoveWhiteWinProbDiffColor = (isWhite && bestMoveWhiteWinProbDiff >= 0) || (!isWhite && bestMoveWhiteWinProbDiff <= 0) ? '#42b983' : '#ff6b6b';
+                const bestMoveWhiteDrawProbDiffColor = '#000000';
+                const bestMoveWhiteLossProbDiffColor = (isWhite && bestMoveWhiteLossProbDiff <= 0) || (!isWhite && bestMoveWhiteLossProbDiff >= 0) ? '#42b983' : '#ff6b6b';
+
+                const bestMoveWhiteWinProbText = `${(moveObj.bestMoveWhiteWinProb * 100).toFixed(1)}% (<span style="color: ${bestMoveWhiteWinProbDiffColor}">${bestMoveWhiteWinProbDiff >= 0 ? '+' : ''}${bestMoveWhiteWinProbDiff.toFixed(1)}%</span>)`;
+                const bestMoveWhiteDrawProbText = `${(moveObj.bestMoveWhiteDrawProb * 100).toFixed(1)}% (<span style="color: ${bestMoveWhiteDrawProbDiffColor}">${bestMoveWhiteDrawProbDiff >= 0 ? '+' : ''}${bestMoveWhiteDrawProbDiff.toFixed(1)}%</span>)`;
+                const bestMoveWhiteLossProbText = `${(moveObj.bestMoveWhiteLossProb * 100).toFixed(1)}% (<span style="color: ${bestMoveWhiteLossProbDiffColor}">${bestMoveWhiteLossProbDiff >= 0 ? '+' : ''}${bestMoveWhiteLossProbDiff.toFixed(1)}%</span>)`;
 
                 const bestWDL = moveObj.bestMoveSAN ? `
                     <div class="wdl-container">
                         <div class="wdl-probabilities">
                             <div class="wdl-item">
-                                <span class="wdl-label">Win</span>
-                                <span class="wdl-value">${(moveObj.bestMoveWhiteWinProb * 100).toFixed(1)}%</span>
+                                <span class="wdl-label">White to Win</span>
+                                <span class="wdl-value">${bestMoveWhiteWinProbText}</span>
                             </div>
                             <div class="wdl-item">
                                 <span class="wdl-label">Draw</span>
-                                <span class="wdl-value">${(moveObj.bestMoveWhiteDrawProb * 100).toFixed(1)}%</span>
+                                <span class="wdl-value">${bestMoveWhiteDrawProbText}</span>
                             </div>
                             <div class="wdl-item">
-                                <span class="wdl-label">Loss</span>
-                                <span class="wdl-value">${(moveObj.bestMoveWhiteLossProb * 100).toFixed(1)}%</span>
+                                <span class="wdl-label">Black to Win</span>
+                                <span class="wdl-value">${bestMoveWhiteLossProbText}</span>
                             </div>
                         </div>
-                    </div>` : '';
+                    </div>
+                ` : '';
                 
                 // Update the move display with both lines and WDL probabilities
                 const moveDisplay = document.getElementById('move-display');
                 if (moveDisplay) {
+                    // Only show best move if it's different from the current move
+                    const showBestMove = !moveObj.isBestMove;
+                    
                     moveDisplay.innerHTML = `
                         <div class="current-move">
                             ${moveText}
                             ${playedWDL}
                         </div>
-                        ${bestMoveText ? `
+                        ${showBestMove ? `
                             <div class="best-move">
                                 ${bestMoveText}
                                 ${bestWDL}
@@ -570,7 +600,10 @@
                 
                 // Calculate the score difference for display
                 const scoreDiff = analysis.whiteScore - analysis.previousWhiteScore;
-                const scoreText = `${analysis.whiteScore.toFixed(2)} (${scoreDiff >= 0 ? '+' : ''}${scoreDiff.toFixed(2)})`;
+                const isWhite = analysis.color === 'White';
+                const scoreColor = (isWhite && analysis.whiteScore >= 0) || (!isWhite && analysis.whiteScore <= 0) ? '#42b983' : '#ff6b6b';
+                const scoreDiffColor = (isWhite && scoreDiff >= 0) || (!isWhite && scoreDiff <= 0) ? '#42b983' : '#ff6b6b';
+                const scoreText = `<span style="color: ${scoreColor}">${analysis.whiteScore.toFixed(2)}</span> (<span style="color: ${scoreDiffColor}">${scoreDiff >= 0 ? '+' : ''}${scoreDiff.toFixed(2)}</span>)`;
                 
                 const moveText = `Move ${analysis.moveNumber}. ${analysis.color} (${analysis.moveText}): Score: ${scoreText}`;
                 const bestMoveText = analysis.bestMoveSAN ? `Best: ${analysis.bestMoveSAN} (Score: ${analysis.bestMoveWhiteScore.toFixed(2)})` : '';
@@ -591,7 +624,7 @@
                 evaluationData.datasets[0].data.push(analysis.whiteScore);
                 
                 // Update y-axis scale if needed
-                const maxAbsValue = Math.max(4, Math.abs(analysis.whiteScore));
+                const maxAbsValue = Math.max(4, Math.abs(analysis.whiteScore), evaluationChart.options.scales.y.max);
                 evaluationChart.options.scales.y.min = -maxAbsValue;
                 evaluationChart.options.scales.y.max = maxAbsValue;
                 

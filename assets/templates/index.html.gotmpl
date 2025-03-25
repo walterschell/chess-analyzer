@@ -53,6 +53,10 @@
         <div class="config-section">
             <label for="analysisDepth">Analysis Depth:</label>
             <input type="number" id="analysisDepth" min="1" max="30" value="5" style="width: 60px;">
+            <label style="margin-left: 20px;">
+                <input type="checkbox" id="blackPerspective" onchange="togglePerspective()">
+                Black's Perspective
+            </label>
         </div>
 
         <div class="button-group">
@@ -913,7 +917,41 @@
             resizeObserver.observe(boardContainer);
         }
 
-        // Initialize the resize observer when the game starts
+        // Add perspective toggle function
+        function togglePerspective() {
+            const isBlackPerspective = document.getElementById('blackPerspective').checked;
+            board.orientation(isBlackPerspective ? 'black' : 'white');
+            
+            // Redraw arrows if there's a current move
+            if (currentMoveIndex >= 0) {
+                const moveObj = moveAnalysis.get(currentMoveIndex);
+                if (moveObj) {
+                    const position = game.history({ verbose: true });
+                    if (position.length > 0) {
+                        const lastMove = position[position.length - 1];
+                        const sourceSquare = lastMove.from;
+                        const targetSquare = lastMove.to;
+                        
+                        // Clear and redraw arrows
+                        clearArrows();
+                        const arrowColor = getArrowColor(moveObj.classification);
+                        drawArrow(sourceSquare, targetSquare, arrowColor);
+                        
+                        // Update best move highlights
+                        if (moveObj.bestMoveSAN) {
+                            const bestMove = moveObj.bestMove;
+                            const bestSourceSquare = bestMove.substring(0, 2);
+                            const bestTargetSquare = bestMove.substring(2, 4);
+                            
+                            $(`#board .square-${bestSourceSquare}`).addClass('highlight-best-move');
+                            $(`#board .square-${bestTargetSquare}`).addClass('highlight-best-move');
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update board initialization
         window.initializeGame = function() {
             game = new Chess();
             // Initialize the chessboard
@@ -923,7 +961,8 @@
                 moveSpeed: 200,
                 snapSpeed: 100,
                 snapbackSpeed: 250,
-                appearSpeed: 200
+                appearSpeed: 200,
+                orientation: 'white' // Default to white's perspective
             });
             
             // Setup resize observer after board initialization

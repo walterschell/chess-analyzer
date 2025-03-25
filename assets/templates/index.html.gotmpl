@@ -96,20 +96,6 @@
         var $board = $('#board');
         var moveAnalysis = new Map(); // Store analysis results for each move
         
-        // Initialize game function that will be called after the module is loaded
-        window.initializeGame = function() {
-            game = new Chess();
-            // Initialize the chessboard
-            board = Chessboard('board', {
-                position: 'start',
-                pieceTheme: '/static/pieces/{piece}.png',
-                moveSpeed: 200, // Animation speed in milliseconds
-                snapSpeed: 100, // How quickly pieces snap to position
-                snapbackSpeed: 250, // Speed of piece snapback for illegal moves
-                appearSpeed: 200 // How quickly pieces appear on the board
-            });
-        };
-        
         // Arrow drawing functions
         function drawArrow(from, to, color) {
             const boardContainer = document.querySelector('.board-container');
@@ -121,19 +107,7 @@
             if (!svg) {
                 svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
                 svg.setAttribute("class", "arrows-svg");
-                
-                // Get the board's position and size
-                const boardRect = boardElement.getBoundingClientRect();
-                const containerRect = boardContainer.getBoundingClientRect();
-                
-                // Position SVG exactly over the board
-                svg.style.position = "absolute";
-                svg.style.top = boardRect.top + "px";
-                svg.style.left = boardRect.left + "px";
-                svg.style.width = boardRect.width + "px";
-                svg.style.height = boardRect.height + "px";
-                svg.style.pointerEvents = "none";
-                svg.style.zIndex = "1000";
+                svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
                 boardContainer.appendChild(svg);
             }
 
@@ -143,22 +117,23 @@
             
             if (!fromSquare || !toSquare) return;
 
-            // Get the board dimensions
+            // Get the board dimensions and positions
             const boardRect = boardElement.getBoundingClientRect();
+            const containerRect = boardContainer.getBoundingClientRect();
             const squareSize = boardRect.width / 8;
 
-            // Get square positions relative to the board
+            // Calculate positions relative to the board container
             const fromRect = fromSquare.getBoundingClientRect();
             const toRect = toSquare.getBoundingClientRect();
+            
+            // Convert viewport coordinates to container-relative coordinates and center on squares
+            const startX = fromRect.left - containerRect.left + fromRect.width / 2;
+            const startY = fromRect.top - containerRect.top + fromRect.height / 2;
+            const endX = toRect.left - containerRect.left + toRect.width / 2;
+            const endY = toRect.top - containerRect.top + toRect.height / 2;
 
-            // Calculate positions relative to the board
-            const startX = fromRect.left - boardRect.left + fromRect.width / 2;
-            const startY = fromRect.top - boardRect.top + fromRect.height / 2;
-            const endX = toRect.left - boardRect.left + toRect.width / 2;
-            const endY = toRect.top - boardRect.top + toRect.height / 2;
-
-            // Set viewBox to match the board's dimensions
-            svg.setAttribute("viewBox", `0 0 ${boardRect.width} ${boardRect.height}`);
+            // Set viewBox to match the container's dimensions
+            svg.setAttribute("viewBox", `0 0 ${containerRect.width} ${containerRect.height}`);
 
             // Calculate arrow shaft length
             const dx = endX - startX;
@@ -897,6 +872,63 @@
                 ws.send(JSON.stringify(msg));
             }
         }
+
+        // Add resize observer to handle board resizing
+        function setupResizeObserver() {
+            const boardContainer = document.querySelector('.board-container');
+            if (!boardContainer) return;
+
+            const resizeObserver = new ResizeObserver(entries => {
+                for (const entry of entries) {
+                    // Clear and redraw arrows when the board resizes
+                    clearArrows();
+                    if (currentMoveIndex >= 0) {
+                        const moveObj = moveAnalysis.get(currentMoveIndex);
+                        if (moveObj) {
+                            const position = game.history({ verbose: true });
+                            if (position.length > 0) {
+                                const lastMove = position[position.length - 1];
+                                const sourceSquare = lastMove.from;
+                                const targetSquare = lastMove.to;
+                                
+                                // Draw arrow for the current move only
+                                const arrowColor = getArrowColor(moveObj.classification);
+                                drawArrow(sourceSquare, targetSquare, arrowColor);
+                                
+                                // Highlight best move squares if available
+                                if (moveObj.bestMoveSAN) {
+                                    const bestMove = moveObj.bestMove;
+                                    const bestSourceSquare = bestMove.substring(0, 2);
+                                    const bestTargetSquare = bestMove.substring(2, 4);
+                                    
+                                    $(`#board .square-${bestSourceSquare}`).addClass('highlight-best-move');
+                                    $(`#board .square-${bestTargetSquare}`).addClass('highlight-best-move');
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            resizeObserver.observe(boardContainer);
+        }
+
+        // Initialize the resize observer when the game starts
+        window.initializeGame = function() {
+            game = new Chess();
+            // Initialize the chessboard
+            board = Chessboard('board', {
+                position: 'start',
+                pieceTheme: '/static/pieces/{piece}.png',
+                moveSpeed: 200,
+                snapSpeed: 100,
+                snapbackSpeed: 250,
+                appearSpeed: 200
+            });
+            
+            // Setup resize observer after board initialization
+            setupResizeObserver();
+        };
     </script>
 </body>
 </html>
